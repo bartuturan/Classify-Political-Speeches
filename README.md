@@ -1,102 +1,169 @@
-# Documentation: Classifying Political Speeches on Health Policy
+# Classify Political Speeches
 
-## Project Overview
+This repository contains notebooks and documentation for classifying EU political speech sentences, with a current focus on climate mitigation content.
 
-This repository contains code and documentation for classifying sentences from EU political speeches to determine whether they address health policy. The project combines dictionary-based filtering, large language model (LLM) classification, and human annotation to create and evaluate a labeled dataset.
+The workflow combines:
+- dictionary-based prefiltering,
+- LLM labeling,
+- human annotation,
+- supervised transformer training,
+- and large-scale inference on Parliament, Commission, and Council corpora.
 
-## Contents
+## Project Scope
 
-- **Introduction:** Project scope and motivation
-- **Definition of Health Policy:** EU context and policy areas
-- **Methodology:** Data sources, sampling, classification steps
-- **Dictionary for Prefiltering:** Terms used to identify health-related sentences
-- **Prompt for LLM Classification:** Instructions for automated classification
+The documentation file in this repo is:
+- `Documentation_ Classifying Political Speeches on Climate Mitigation.docx`
 
----
+It defines climate mitigation as speech about actions that reduce greenhouse gas emissions or increase carbon sinks, in line with EU policy context (e.g., Green Deal, ETS, Fit for 55, energy transition).
 
-## 1. Introduction
+## Repository Structure
 
-This document outlines the process used to classify political speeches with the aim of identifying whether they address health policy. The classification task is designed to assist in understanding the coverage of health topics in EU political discourse.
+- `data/`: institution-level folders (`Commission/`, `Council/`, `EP/`) for datasets/outputs.
+- `notebooks/`: end-to-end pipeline notebooks.
+- `requirements.txt`: basic Python dependencies.
 
-## 2. Definition of Health Policy
+## Notebook Guide
 
-> “EU countries hold primary responsibility for organising and delivering health services and medical care.  
-> EU health policy therefore serves to complement national policies, to ensure health protection in all EU policies and to work towards a stronger Health Union.  
-> EU policies and actions in public health aim to  
-> - protect and improve the health of EU citizens  
-> - support the modernisation and digitalisation of health systems and infrastructure  
-> - improve the resilience of Europe's health systems  
-> - equip EU countries to better prevent and address future pandemics”  
-> &mdash; Overview, European Commission
+### 1) `Climate Mitigation-Prefiltering with dictionary-share.ipynb`
+Purpose:
+- Lemmatizes text with spaCy.
+- Uses a climate mitigation dictionary to count matches per sentence.
+- Produces dictionary-filtered datasets used for balanced sampling and analysis.
 
-## 3. Methodology
+Typical output:
+- Feather/CSV files with `how_many_words_in_climate_mitigation_dictionary`.
 
-- A dataset of political speeches was collected from the EU Council, EU Commission, and the European Parliament.
-- Sentences were sampled from each speech.
-- Sentences were classified using lemmatized dictionary filtering.
-- A stratified sample of 10,000 sentences was created: 5,000 with dictionary words, and 5,000 without.
-- These sentences were then classified by the `llama3-8b` model using Groq.
-- 1,000 sentences were randomly chosen for human annotation.
-- Accuracy metrics were calculated to measure the performance of the language models.
-- 'roberta-base' is pretrained on LLM annotated data and fine tuned in human annotated data.
+### 2) `Classify sentences with LLM-share.ipynb`
+Purpose:
+- Runs LLM-based sentence classification (Groq / Llama family) on sampled or full data.
+- Supports checkpointing/retry logic for API rate-limit failures.
+- Writes classification outputs with label and explanation fields.
 
-## 4. Dictionary Used for Prefiltering
+Typical output columns:
+- sentence text,
+- `is_climate_LLM`,
+- `llm_explanation`.
 
-The following dictionary was used (after lemmatization) to prefilter sentences and create a balanced sample.
+### 3) `train classifier with annotation data-share.ipynb`
+Purpose:
+- Merges institution-specific human-annotated files into a gold dataset.
+- Trains and evaluates a RoBERTa classifier on gold labels.
 
-<details>
-<summary>Show dictionary</summary>
+Typical output:
+- `gold_all.csv`.
+- Fine-tuned model/checkpoints.
 
-```python
-DICTIONARY_RAW = [
-    # Core Health Terms
-    "public health", "health policy", "healthcare system", "national health service", "health insurance",
-    "universal healthcare", "access to healthcare", "health coverage", "primary care", "secondary care",
-    "medical services", "hospital services", "outpatient care", "in-patient care", "health infrastructure",
-    "telemedicine", "ehealth", "digital health",
+### 4) `pretrain on silver-share.ipynb`
+Purpose:
+- Merges LLM outputs into a silver dataset.
+- Pretrains on silver labels and fine-tunes on gold labels.
+- Compares silver+gold versus gold-only performance.
 
-    # Institutions & Policy Terms (EU Context)
-    "european medicines agency", "eu4health", "european centre for disease prevention and control",
-    "health security committee", "european health union", "cross-border healthcare",
-    "health emergency preparedness and response authority",
+Typical output:
+- `silver_all.csv`.
+- Final model directory (for downstream institution-level inference).
 
-    # Specific Health Issues & Areas
-    "mental health", "chronic disease", "cancer care", "diabetes care", "cardiovascular disease",
-    "pandemic response", "vaccination program", "immunisation strategy", "infectious diseases",
-    "antimicrobial resistance", "rare diseases", "pharmaceutical policy", "medicine shortage",
-    "drug access", "reproductive health", "maternal care", "child health",
+### 5) `Label Speeches-ep-climate.ipynb`
+Purpose:
+- Applies the final trained classifier to the European Parliament corpus.
+- Includes chunked processing for large feather files.
 
-    # Health-Related Professions & Workforce
-    "doctors", "nurses", "general practitioners", "healthcare workers", "health professionals",
-    "medical staff", "clinical workforce", "frontline workers",
+### 6) `Label Speeches-com-climate.ipynb`
+Purpose:
+- Applies the final trained classifier to the European Commission corpus.
+- Uses chunked/batched inference.
 
-    # Health-Related Social Policy
-    "healthy ageing", "health inequalities", "health equity", "health promotion", "disease prevention",
-    "healthy lifestyles"
-]
+### 7) `Label_Speeches_council-climate.ipynb`
+Purpose:
+- Applies the final trained classifier to the European Council corpus.
+- Uses chunked/batched inference.
+
+## Recommended Execution Order
+
+Run notebooks in this order for a full pipeline:
+
+1. `Climate Mitigation-Prefiltering with dictionary-share.ipynb`
+2. `Classify sentences with LLM-share.ipynb`
+3. Human annotation step (outside notebook, on sampled data)
+4. `train classifier with annotation data-share.ipynb`
+5. `pretrain on silver-share.ipynb`
+6. `Label Speeches-ep-climate.ipynb`
+7. `Label Speeches-com-climate.ipynb`
+8. `Label_Speeches_council-climate.ipynb`
+
+Notes:
+- Steps 4 and 5 can be compared experimentally (gold-only vs silver+gold).
+- Institution labeling notebooks (steps 6-8) should use the same selected final model directory.
+
+## Methodology Summary (From Documentation)
+
+- Collect speech data from EP, Commission, and Council.
+- Split speeches into sentences.
+- Apply dictionary prefiltering with lemmatized climate terms.
+- Build a stratified sample (dictionary-hit and no-hit groups).
+- Label sample with LLMs, then human-annotate a subset.
+- Evaluate model quality with precision/recall/F1 and accuracy.
+- Train RoBERTa on gold labels, with optional silver pretraining.
+
+## Climate Dictionary (Core Terms)
+
+The documentation uses a dictionary including terms such as:
+- carbon neutrality,
+- climate neutrality,
+- net zero,
+- greenhouse gas emission,
+- EU ETS,
+- carbon border adjustment / CBAM,
+- climate law,
+- Fit for 55,
+- Green Deal,
+- renewable energy deployment,
+- energy efficiency directive,
+- emission reduction target.
+
+For the full list, see:
+- `notebooks/Climate Mitigation-Prefiltering with dictionary-share.ipynb`
+- `Documentation_ Classifying Political Speeches on Climate Mitigation.docx`
+
+## Prompting Logic (LLM Labeling)
+
+Binary decision:
+- `1` if sentence is about climate mitigation in EU policy context.
+- `0` otherwise.
+
+The prompt criteria in the documentation emphasize:
+- emission reduction,
+- low-carbon technologies,
+- renewable energy,
+- carbon sinks,
+- and EU mitigation policy instruments.
+
+## Environment Notes
+
+Many notebooks were originally developed in Google Colab with Google Drive paths. To run locally, update:
+- input/output file paths,
+- model directory paths,
+- and API key loading logic.
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
 ```
-</details>
 
-## 5. Prompt Used for Classification
+Some notebooks also install extra packages inline (e.g., `transformers`, `datasets`, `evaluate`, `groq`, `pyarrow`, `spacy`).
 
-**Prompt:**
+## Documentation and Limitations
 
-> Determine whether the following sentence is about **health** in the context of European Union (EU) policy.
->
-> A sentence is about *health* if it refers to **healthcare systems**, **public health**, **medical services**, **diseases**, **health policy**, **pharmaceuticals**, **health crises** (like COVID-19), or related EU efforts.
->
-> It also includes topics related to EU efforts to:
-> - Support the modernization and digitalization of health systems and infrastructure
-> - Improve the resilience of Europe’s health systems
-> - Protect and improve the health of EU citizens
-> - Prevent and address future pandemics
-> - Complement national healthcare policies and ensure health protection across EU policies
->
-> Now, analyze the sentence below and respond with either **"1"** if it is about health in the EU policy context, or **"0"** if it is not. Provide a brief explanation for your answer.
->
-> `Sentence: "{sentence}"`
->
-> `Response:`
+The documentation reports that dictionary filtering can outperform zero-shot LLM labeling in this task setup, depending on institution and sample.
 
----
+Known limitations:
+- ambiguous language where mitigation is implied indirectly,
+- possible dataset/source bias,
+- sensitivity to prompt wording and thresholding.
+
+Potential next improvements:
+- confidence/uncertainty scoring,
+- expanded labeled set,
+- broader topic transfer to additional policy domains.
 
